@@ -43,12 +43,8 @@ use SpockTest qw(
 #   - The leak invariant in a true mid-DML scenario.  apply_delay's
 #     pg_usleep delays disconnect detection until AFTER handle_commit has
 #     completed legitimately, so the apply worker is between transactions
-#     when PG_CATCH fires -- there is no in-flight remote transaction
-#     whose final_lsn could leak through.  Reproducing the true mid-DML
-#     scenario deterministically requires injection points which the
-#     v5_STABLE branch does not have.  The leak-prevention invariant is
-#     preserved by code analogy with PG core's start_apply PG_CATCH
-#     (src/backend/replication/logical/worker.c:4452).
+#     when PG_CATCH fires.  Test 104_sub_disable_replay_after_disconnect
+#     covers the mid-transaction restart path deterministically.
 # =============================================================================
 
 create_cluster(2, 'Create 2-node cluster for apply_delay disconnect test');
