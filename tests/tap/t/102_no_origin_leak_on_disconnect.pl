@@ -44,7 +44,9 @@ use SpockTest qw(
 #     pg_usleep delays disconnect detection until AFTER handle_commit has
 #     completed legitimately, so the apply worker is between transactions
 #     when PG_CATCH fires.  Test 104_sub_disable_replay_after_disconnect
-#     covers the mid-transaction restart path deterministically.
+#     covers the mid-transaction branch with deterministic error injection;
+#     test 105_sub_disable_replay_after_walsender_kill covers it with a real
+#     provider WAL-sender SIGKILL and crash recovery.
 # =============================================================================
 
 create_cluster(2, 'Create 2-node cluster for apply_delay disconnect test');

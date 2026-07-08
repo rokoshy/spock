@@ -8,8 +8,9 @@ use SpockTest qw(
     wait_for_sub_status
 );
 
-# A connection-class error during the first apply attempt must abort locally
-# without turning the retransmitted transaction into a SUB_DISABLE replay.
+# Fast, deterministic code-path test: a replica trigger injects SQLSTATE
+# 08006 during the first apply attempt.  This is not a process-kill test;
+# 105_sub_disable_replay_after_walsender_kill covers the provider crash path.
 # The sequence is intentionally nontransactional, so the trigger fails only
 # once even though the surrounding INSERT is rolled back.
 
@@ -22,11 +23,14 @@ my $dbname      = $config->{db_name};
 my $db_user     = $config->{db_user};
 my $db_password = $config->{db_password};
 my $log_dir     = $config->{log_dir};
+my $node_dirs   = $config->{node_datadirs};
 
 my $p1 = $node_ports->[0];
 my $p2 = $node_ports->[1];
 my $conn_n1 = "host=$host dbname=$dbname port=$p1 user=$db_user password=$db_password";
-my $pg_log_n2 = "$log_dir/00${p2}.log";
+my $pg_log_n2 = $log_dir =~ m{^/}
+    ? "$log_dir/00${p2}.log"
+    : "$node_dirs->[1]/$log_dir/00${p2}.log";
 
 psql_or_bail(2, "ALTER SYSTEM SET spock.exception_behaviour = 'sub_disable'");
 psql_or_bail(2, "SELECT pg_reload_conf()");
