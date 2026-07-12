@@ -327,6 +327,7 @@ static void apply_replay_entry_free(ApplyReplayEntry *entry);
 static void apply_replay_queue_reset(void);
 static void maybe_send_feedback(PGconn *applyconn, XLogRecPtr lsn_to_send,
 								TimestampTz *last_receive_timestamp);
+static bool sync_standby_configured(void);
 static void append_feedback_position(XLogRecPtr local_commit_lsn,
 									 XLogRecPtr remote_commit_lsn);
 static void get_feedback_position(XLogRecPtr *recvpos, XLogRecPtr *writepos,
@@ -1104,7 +1105,7 @@ handle_commit(StringInfo s)
 
 		CommitTransactionCommand();
 
-		if (WalSndCtl->sync_standbys_status & SYNC_STANDBY_DEFINED)
+		if (sync_standby_configured())
 			append_feedback_position(XactLastCommitEnd, end_lsn);
 
 		remoteTransactionStopTimestamp = 0;
@@ -2944,31 +2945,41 @@ get_flush_position(XLogRecPtr *write, XLogRecPtr *flush)
  *                        WalSndCtl->lsn[SYNC_REP_WAIT_FLUSH] in
  *                        get_feedback_position() to know when the sync
  *                        standby has the commit.
- *   remote_*          -- the publisher-side positions we will eventually
- *                        report (recv = write position in the publisher's
- *                        WAL stream we have processed, flush/write are the
- *                        equivalent positions returned by get_flush_position
- *                        once the local commit is durable).
+ *   remote_*          -- the publisher-side commit position we will report
+ *                        as received, flushed and applied once the local
+ *                        physical standby has made the commit failover-safe.
  */
+static bool
+sync_standby_configured(void)
+{
+	/*
+	 * Use this process's parsed GUC rather than the checkpointer-maintained
+	 * shared status bit.  During postmaster startup the shared status can be
+	 * uninitialized even though synchronous_standby_names is configured.  The
+	 * local parsed value has no such window and makes the conservative hold
+	 * active from the apply worker's first transaction.
+	 */
+	return SyncRepConfig != NULL;
+}
+
 static void
 append_feedback_position(XLogRecPtr local_commit_lsn, XLogRecPtr remote_commit_lsn)
 {
-	XLogRecPtr	remote_writepos;
-	XLogRecPtr	remote_flushpos;
+	XLogRecPtr	ignored_writepos;
+	XLogRecPtr	ignored_flushpos;
 	RemoteSyncPosition *syncpos;
 	MemoryContext oldctx;
 
-	Assert(WalSndCtl->sync_standbys_status & SYNC_STANDBY_DEFINED);
+	Assert(sync_standby_configured());
 
-	if (get_flush_position(&remote_writepos, &remote_flushpos))
-	{
-		/*
-		 * Nothing else outstanding -- the position we just committed is the
-		 * tip of what we have applied from the publisher.  This must be the
-		 * REMOTE LSN, not the local one.
-		 */
-		remote_flushpos = remote_writepos = remote_commit_lsn;
-	}
+	/*
+	 * Retire any locally flushed entries from the ordinary mapping.  The
+	 * values themselves are not the failover-safe boundary in this path: once
+	 * the physical standby has flushed local_commit_lsn, PostgreSQL has also
+	 * flushed this commit locally, so the corresponding remote commit is safe
+	 * to report in all three feedback positions.
+	 */
+	(void) get_flush_position(&ignored_writepos, &ignored_flushpos);
 
 	/* Ensure that we are allocating in the top memory context */
 	oldctx = MemoryContextSwitchTo(TopMemoryContext);
@@ -2977,16 +2988,16 @@ append_feedback_position(XLogRecPtr local_commit_lsn, XLogRecPtr remote_commit_l
 
 	syncpos->local_commit_lsn = local_commit_lsn;
 	syncpos->remote_recvpos = remote_commit_lsn;
-	syncpos->remote_writepos = remote_writepos;
-	syncpos->remote_flushpos = remote_flushpos;
+	syncpos->remote_writepos = remote_commit_lsn;
+	syncpos->remote_flushpos = remote_commit_lsn;
 	dlist_push_tail(&sync_replica_lsn, &syncpos->node);
 	elog(DEBUG2,
 		 "SPOCK %s: queued sync-hold local=%X/%X remote_recv=%X/%X remote_write=%X/%X remote_flush=%X/%X",
 		 MySubscription->name,
 		 LSN_FORMAT_ARGS(local_commit_lsn),
 		 LSN_FORMAT_ARGS(remote_commit_lsn),
-		 LSN_FORMAT_ARGS(remote_writepos),
-		 LSN_FORMAT_ARGS(remote_flushpos));
+		 LSN_FORMAT_ARGS(syncpos->remote_writepos),
+		 LSN_FORMAT_ARGS(syncpos->remote_flushpos));
 }
 
 /*
@@ -3002,7 +3013,7 @@ get_feedback_position(XLogRecPtr *recvpos, XLogRecPtr *writepos, XLogRecPtr *flu
 	dlist_mutable_iter iter1;
 	RemoteSyncPosition *syncpos;
 
-	Assert(WalSndCtl->sync_standbys_status & SYNC_STANDBY_DEFINED);
+	Assert(sync_standby_configured());
 	if (dlist_is_empty(&sync_replica_lsn))
 		return;
 
@@ -3057,22 +3068,48 @@ send_feedback(PGconn *conn, XLogRecPtr recvpos, int64 now, bool force)
 
 	XLogRecPtr	writepos;
 	XLogRecPtr	flushpos;
+	XLogRecPtr	ignored_writepos;
+	XLogRecPtr	ignored_flushpos;
+	bool		has_sync_standby_config;
 
-	/* In case of any syncrounoun replica is attached get the  LSN from the list */
-	if (WalSndCtl->sync_standbys_status & SYNC_STANDBY_DEFINED)
+	has_sync_standby_config = sync_standby_configured();
+	writepos = InvalidXLogRecPtr;
+	flushpos = InvalidXLogRecPtr;
+
+	/*
+	 * With a synchronous physical standby, only the hold queue can prove that
+	 * a local commit is failover-safe.  Without one, the normal local-flush
+	 * mapping is the durable boundary.
+	 */
+	if (has_sync_standby_config)
+	{
 		get_feedback_position(&recvpos, &writepos, &flushpos, &max_recvpos);
 
-	/* It's legal to not pass a recvpos */
-	if (recvpos < last_recvpos)
-		recvpos = last_recvpos;
-
-	if (get_flush_position(&writepos, &flushpos))
-	{
 		/*
-		 * No outstanding transactions to flush, we can report the latest
-		 * received position. This is important for synchronous replication.
+		 * Keep the ordinary local-flush mapping bounded, but never use its
+		 * values as feedback in this path.  Only the synchronous-standby hold
+		 * above establishes the failover-safe remote boundary.
 		 */
-		flushpos = writepos = recvpos;
+		(void) get_flush_position(&ignored_writepos, &ignored_flushpos);
+
+		/* It's legal to not pass a recvpos. */
+		if (recvpos < last_recvpos)
+			recvpos = last_recvpos;
+	}
+	else
+	{
+		/* Preserve the historical no-sync-standby feedback behavior exactly. */
+		if (recvpos < last_recvpos)
+			recvpos = last_recvpos;
+
+		if (get_flush_position(&writepos, &flushpos))
+		{
+			/*
+			 * No outstanding transactions to flush, so report the latest received
+			 * position. This is important for synchronous logical replication.
+			 */
+			flushpos = writepos = recvpos;
+		}
 	}
 
 	if (writepos < last_writepos)
@@ -3080,6 +3117,14 @@ send_feedback(PGconn *conn, XLogRecPtr recvpos, int64 now, bool force)
 
 	if (flushpos < last_flushpos)
 		flushpos = last_flushpos;
+
+	if (has_sync_standby_config && recvpos > flushpos)
+		elog(DEBUG2,
+			 "SPOCK %s: transaction-safe feedback holds durable flush at "
+			 "%X/%X while receive is %X/%X",
+			 MySubscription->name,
+			 LSN_FORMAT_ARGS(flushpos),
+			 LSN_FORMAT_ARGS(recvpos));
 
 	/* if we've already reported everything we're good */
 	if (!force &&
