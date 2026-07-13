@@ -444,10 +444,6 @@ remote_connect(const char *connstr, const char *appname)
 	PGconn *conn;
 	const char *keys[CONN_PARAM_ARRAY_SIZE];
 	const char *vals[CONN_PARAM_ARRAY_SIZE];
-	StringInfoData s;
-
-	initStringInfo(&s);
-	appendStringInfoString(&s, connstr);
 
 	keys[i] = "dbname";
 	vals[i] = connstr;
@@ -485,10 +481,8 @@ remote_connect(const char *connstr, const char *appname)
 		ereport(ERROR,
 				(errmsg("could not connect to the postgresql server: %s",
 						PQerrorMessage(conn)),
-				 errdetail("dsn was: %s", s.data)));
+				 errdetail("failover-slot connection details were redacted")));
 	}
-
-	resetStringInfo(&s);
 
 	elog(DEBUG2, "established connection to remote backend with pid %d",
 		 PQbackendPID(conn));
