@@ -266,7 +266,8 @@ handle_sub_create_command(int argc, char *argv[])
 
     /* Execute SQL query */
     res = PQexec(conn, sql);
-    log_debug0("SQL: %s", sql);
+    log_debug0("Executing spock.sub_create for subscription '%s' "
+               "(provider connection details redacted)", subscription_name);
     if (PQresultStatus(res) != PGRES_TUPLES_OK)
     {
         log_error("SQL command failed: %s", PQerrorMessage(conn));

@@ -450,7 +450,8 @@ handle_node_create_command(int argc, char *argv[])
              country_val,
              info_val);
 
-    log_debug0("SQL: %s", sql);
+    log_debug0("Executing spock.node_create for node '%s' "
+               "(connection details redacted)", node_name);
 
     /* Execute SQL query */
     res = PQexec(conn, sql);
@@ -465,7 +466,8 @@ handle_node_create_command(int argc, char *argv[])
     /* Check for NULL result */
     if (PQntuples(res) == 0 || PQgetvalue(res, 0, 0) == NULL)
     {
-        log_error("SQL function returned NULL for query: %s", sql);
+        log_error("spock.node_create returned NULL for node '%s' "
+                  "(connection details redacted)", node_name);
         PQclear(res);
         PQfinish(conn);
         return EXIT_FAILURE;
@@ -689,7 +691,9 @@ handle_node_add_interface_command(int argc, char *argv[])
              interface_name,
              dsn);
 
-    log_debug0("SQL: %s", sql);
+    log_debug0("Executing spock.node_add_interface for node '%s' "
+               "and interface '%s' (connection details redacted)",
+               node_name, interface_name);
 
     /* Execute SQL query */
     res = PQexec(conn, sql);
@@ -704,7 +708,9 @@ handle_node_add_interface_command(int argc, char *argv[])
     /* Check for NULL result */
     if (PQntuples(res) == 0 || PQgetvalue(res, 0, 0) == NULL)
     {
-        log_error("SQL function returned NULL for query: %s", sql);
+        log_error("spock.node_add_interface returned NULL for node '%s' "
+                  "and interface '%s' (connection details redacted)",
+                  node_name, interface_name);
         PQclear(res);
         PQfinish(conn);
         return EXIT_FAILURE;
@@ -925,7 +931,8 @@ get_pg_version(const char *conninfo, char *pg_version)
     conn = connectdb(conninfo);
     if (conn == NULL)
     {
-        log_error("Failed to connect to database with conninfo: %s", conninfo);
+        log_error("Failed to connect to database "
+                  "(connection details redacted)");
         return EXIT_FAILURE;
     }
 

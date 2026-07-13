@@ -203,11 +203,11 @@ FROM spock_regress_variables()
 SELECT spock.sub_create(
   subscription_name := 'subscription1',
   provider_dsn := :fakecreds);
-ERROR:  dsn "dbname=regression passwordXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+ERROR:  provider connection points to existing node "test_provider" with different connection details
 CREATE FUNCTION call_fn(creds text) RETURNS void AS $$
   SELECT spock.sub_create(
     subscription_name := 'subscription1',
     provider_dsn := creds);
 $$ LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE;
 SELECT call_fn(:fakecreds);
-ERROR:  dsn "dbname=regression passwordXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+ERROR:  provider connection points to existing node "test_provider" with different connection details

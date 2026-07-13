@@ -170,8 +170,7 @@ dump_structure(SpockSubscription *sub, const char *destfile,
 
 	dsn = spk_get_connstr((char *) sub->origin_if->dsn, NULL, NULL, &err_msg);
 	if (dsn == NULL)
-		elog(ERROR, "invalid connection string \"%s\": %s",
-			 sub->origin_if->dsn, err_msg);
+		elog(ERROR, "invalid provider connection string; connection details redacted");
 
 	get_pg_executable(PGDUMP_BINARY, pg_dump);
 
@@ -263,8 +262,7 @@ restore_structure(SpockSubscription *sub, const char *srcfile,
 						  "-cspock.subscription_schema_restore=true",
 						  &err_msg);
 	if (dsn == NULL)
-		elog(ERROR, "invalid connection string \"%s\": %s",
-			 sub->target_if->dsn, err_msg);
+		elog(ERROR, "invalid subscriber connection string; connection details redacted");
 
 	get_pg_executable(PGRESTORE_BINARY, pg_restore);
 
@@ -1514,8 +1512,8 @@ spock_sync_main(Datum main_arg)
 
 	elog(LOG, "starting sync of table %s.%s for subscriber %s",
 		 copytable->schemaname, copytable->relname, MySubscription->name);
-	elog(DEBUG1, "connecting to provider %s, dsn %s",
-		 MySubscription->origin_if->name, MySubscription->origin_if->dsn);
+	elog(DEBUG1, "connecting to provider %s (connection details redacted)",
+		 MySubscription->origin_if->name);
 
 	/* Do the initial sync first. */
 	status = spock_sync_table(MySubscription, copytable, &status_lsn);

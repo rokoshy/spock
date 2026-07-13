@@ -324,12 +324,6 @@ spock_connect_base(const char *connstr, const char *appname,
 	const char *keys[CONN_PARAM_ARRAY_SIZE];
 	const char *vals[CONN_PARAM_ARRAY_SIZE];
 	char		appname_buf[NAMEDATALEN];
-	StringInfoData s;
-
-	initStringInfo(&s);
-	appendStringInfoString(&s, spock_extra_connection_options);
-	appendStringInfoChar(&s, ' ');
-	appendStringInfoString(&s, connstr);
 
 	keys[i] = "dbname";
 	vals[i] = connstr;
@@ -380,10 +374,8 @@ spock_connect_base(const char *connstr, const char *appname,
 				(errmsg("could not connect to the postgresql server%s: %s",
 						replication ? " in replication mode" : "",
 						PQerrorMessage(conn)),
-				 errdetail("dsn was: %s", s.data)));
+				 errdetail("connection details were redacted")));
 	}
-
-	resetStringInfo(&s);
 
 	return conn;
 }
@@ -1298,4 +1290,3 @@ _PG_init(void)
 	/* Security label provider hook */
 	register_label_provider(SPOCK_SECLABEL_PROVIDER, spock_object_relabel);
 }
-

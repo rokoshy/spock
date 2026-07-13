@@ -4691,9 +4691,9 @@ spock_apply_main(Datum main_arg)
 	/* If the subscription isn't initialized yet, initialize it. */
 	spock_sync_subscription(MySubscription);
 
-	elog(DEBUG1, "SPOCK %s: connecting to provider %s, dsn %s",
+	elog(DEBUG1, "SPOCK %s: connecting to provider %s (connection details redacted)",
 		 MySubscription->name,
-		 MySubscription->origin->name, MySubscription->origin_if->dsn);
+		 MySubscription->origin->name);
 
 	/*
 	 * Cache the queue relation id. TODO: invalidation

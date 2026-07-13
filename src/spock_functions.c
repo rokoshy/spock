@@ -516,8 +516,8 @@ Datum spock_create_subscription(PG_FUNCTION_ARGS)
 		if (strcmp(existingif->dsn, provider_dsn) != 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("dsn \"%s\" points to existing node \"%s\" with different dsn \"%s\"",
-							provider_dsn, origin->name, existingif->dsn)));
+					 errmsg("provider connection points to existing node \"%s\" with different connection details",
+							origin->name)));
 
 		memcpy(&originif, existingif, sizeof(SpockInterface));
 	}
